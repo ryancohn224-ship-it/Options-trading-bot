@@ -55,26 +55,35 @@ Backtesting a "works in down markets" strategy on a window with no real bear mar
 a test. Any short-premium strategy will look brilliant. **This is exactly how people blow
 up.** We need history that includes at least two genuine regime breaks.
 
-### What I recommend you buy
+### What to buy, and when — phased for a small account
 
-**Tier 2 is my recommendation.** Tier 1 is not sufficient for the strategy you described.
+An earlier draft of this plan recommended ~$250/mo of ongoing data. **On a sub-$25k
+account that is a bad recommendation** — $3,000/yr against $20k of capital is a 15%
+annual drag, meaning the strategy has to clear 15% before you've made a dollar. That
+alone could be the difference between edge and no edge.
 
-**Tier 1 — Minimum (~$99/mo).** Alpaca Algo Trader Plus only. Viable *only* for
-short-lookback intraday sleeves. You cannot validate the core strategy. Not recommended.
+So the spend is phased instead. Historical data is a **bounded R&D purchase**, not a
+subscription you carry forever.
 
-**Tier 2 — Recommended (~$200–300/mo).**
-- **Alpaca** — execution, $0 options commissions, paper trading — free
-- **Alpaca Algo Trader Plus** — live OPRA feed — **$99/mo**
-- **ThetaData** — historical options: NBBO quotes, trades, greeks, IV, deep history — **~$80–160/mo**. This is the single most important purchase in the whole plan. It's what makes the backtest real
-- **TradingView** — for *you* to eyeball setups and sanity-check the bot — **~$15–30/mo**
-- **Free and genuinely good:** FRED (macro), CBOE index data (VIX, VIX9D, VIX3M, SKEW, put/call ratios), Treasury yield curve, SEC EDGAR full-text search
+**Phase 1 — Research and backtesting (months 1–5): ~$400–600 total**
+- **ThetaData**, ~$100/mo for the ~4 months we're actively building and validating. Download the history, store it locally, then **cancel**. Once the data is in our warehouse it's ours; we don't need to keep renting it
+- Everything else free: Alpaca paper account, CBOE index data (VIX, VIX9D, VIX3M, SKEW, put/call ratios), FRED macro, SEC EDGAR
+- TradingView free tier is fine for eyeballing. Skip the paid plan for now
 
-**Tier 3 — If it's working and you want to scale (~$500–800/mo).** Add only after Tier 2
-has produced a strategy that survived paper trading.
-- **ORATS** — clean historical IV surfaces, earnings-move history, pre-computed backtests
-- **Unusual Whales** (~$50–75/mo) or **Quant Data** (~$150/mo) — options flow, dark pool, dealer gamma exposure (GEX)
-- **Polygon.io / Massive** Advanced (~$199/mo) — tick-level equity + options history
-- **Interactive Brokers** as a second broker — for SPX/index options (cash-settled, 60/40 tax treatment, no early assignment) and better fills at size
+**Phase 2 — Paper trading (months 6–8): $0–99/mo**
+- Our core sleeves make decisions **once a day**, not intraday. Alpaca's free tier serves data older than 15 minutes, which is fine for generating end-of-day signals
+- Add **Algo Trader Plus ($99/mo)** only when we start measuring fill quality seriously — we need live NBBO to know whether our slippage model is honest
+- Realistically: free for the first month or two, then $99/mo
+
+**Phase 3 — Live: $99/mo**
+- Algo Trader Plus for real-time OPRA. On $20k that's ~6%/yr — real, but tolerable, and it scales down as a percentage as the account grows
+
+**Total cost to reach first live dollar: roughly $700–1,000.** That's the honest number.
+
+**Later, only if it's working and the account has grown:** ORATS (historical IV surfaces,
+earnings-move history), Unusual Whales or Quant Data (flow, dealer gamma), Polygon/Massive
+(tick data), Interactive Brokers as a second broker. None of these are needed to find out
+whether the strategy has an edge, and none should be bought before it does.
 
 ### Do you need to build your own tool?
 
@@ -89,53 +98,102 @@ across several vendors at once. So we buy raw data and build:
 4. **A monitoring dashboard** — positions, greeks, P&L attribution, risk limits
 
 **Do NOT build:** an order management system (Alpaca has one), a charting library (plotly /
-TradingView), a Black-Scholes/greeks engine from scratch (`py_vollib`, QuantLib — and
-ThetaData ships greeks anyway).
+TradingView), a Black-Scholes/greeks engine from scratch (`py_vollib` — and ThetaData ships
+greeks anyway).
+
+**→ [Section 4.3](#43-what-the-data-warehouse-actually-is) explains concretely what the
+warehouse is** — it's a folder of files, not infrastructure.
 
 ---
 
-## 2. What I need from you
+## 2. Your account profile and what it constrains
 
-Answer these and I can start building. Grouped by whether they block me.
+**Confirmed:** regular taxable account (not an IRA), under $25,000, paper trading first
+until an edge is demonstrated.
 
-### Blocking — I can't build without these
+### The PDT rule probably doesn't bind anymore — but verify
 
-1. **Capital.** How much is actually going into this? It changes everything — strategy
-   selection, position sizing, whether index options are even reachable.
-2. **Account type.** Individual taxable, or IRA? *An IRA blocks naked/undefined-risk
-   positions entirely* and changes the whole strategy set. Margin or cash account?
-3. **Reg-T margin or portfolio margin?** Portfolio margin needs $125k+ but massively
-   improves capital efficiency for defined-risk spreads.
-4. **PDT check.** If the account is under $25,000 and it's a margin account, you get 3 day
-   trades per 5 business days. That kills any intraday sleeve. Under $25k we design
-   around overnight holds only — tell me which side of that line you're on.
-5. **Max drawdown you can actually stomach**, as a number. Not "not much." A real
-   percentage. Every risk limit in the system derives from this one number.
-6. **Data budget.** Which tier from Section 1.
+This changed recently and it's good news. On **April 14, 2026** the SEC approved
+amendments to FINRA Rule 4210 that **eliminated the pattern-day-trader designation and
+the $25,000 minimum equity requirement**, effective **June 4, 2026**. It's replaced by an
+intraday margin monitoring standard applied at the firm level. Brokers have until
+**October 20, 2027** to implement, so whether it still binds *you* depends entirely on
+where Alpaca is in that transition.
 
-### Blocking, but easy
+**Action: ask Alpaca support directly whether day-trade counting is still enforced on
+sub-$25k margin accounts.** Don't assume either way.
 
-7. **Alpaca account + options approval.** You need **Level 3** for spreads. Apply early —
-   approval is not instant and Level 3 asks about experience.
-8. **Paper trading API keys** (key + secret). Paper only for now. We will not touch live
-   keys for months.
+**It mostly doesn't matter for us regardless**, and that's by design. Sleeves A–D all hold
+positions for days to weeks — 30–45 DTE entries, managed at 50% profit, closed by 21 DTE.
+Almost nothing opens and closes the same session. So:
 
-### Non-blocking — I'll assume a default if you don't answer
+- The core strategy is **unaffected** either way
+- Only **Sleeve E (0DTE intraday)** ever depended on this, and it was already disabled
+- **One real engineering requirement:** a position that hits its 50%-profit target on the
+  same day it was opened would be a same-day round trip. The bot needs a day-trade counter
+  and a "no same-day close" guard, active whenever Alpaca still enforces PDT. Small piece
+  of code, easy to forget, causes a compliance flag if you do
 
-9. **Universe.** Default assumption: start with liquid ETFs (SPY, QQQ, IWM) plus ~40–60
-   large-cap single names, expand later.
-10. **Autonomy.** Default assumption: fully autonomous in paper, human-approval gate for
-    the first live months.
-11. **Hosting.** Default assumption: a small cloud VPS in us-east (low latency to
-    exchanges) with the data warehouse local to it.
-12. **Sector/ticker exclusions.** Anything you refuse to trade for personal reasons?
+### What a sub-$25k account actually constrains
 
-### Acknowledgement I want from you in writing
+The binding constraint isn't buying power — defined-risk spreads are cheap in BP terms.
+It's **granularity**. At $20k with a 1–2% per-trade risk limit, you have **$200–400 of max
+loss per position**, and options come in discrete sizes.
 
-This is your capital. I'll build the most rigorous thing I can, and this plan has more
-risk controls than most retail systems, but **systematic options trading loses money for
-most people who try it.** No projected return in this document is a promise. The kill
-switches in Section 5 exist because they will eventually fire.
+- A SPY **$5-wide** put credit spread risks ~$500 max. **Too big** — that's one trade
+  putting 2.5% at risk
+- A SPY **$1–2-wide** spread risks ~$100–180. **This is the workable size**, roughly 0.5–1%
+- Expect **5–8 concurrent positions**, not 20. Diversification is genuinely limited, which
+  makes the beta-weighting and correlation controls in Section 5 more important, not less
+- **Alpaca's $0 options commission matters enormously here.** At $0.65/contract, four legs
+  round-trip is $5.20 against maybe $60 of credit — a 9% haircut that would sink this.
+  This is the main reason Alpaca is the right broker for a small account
+- **Sleeve C (tail hedge) is proportionally expensive.** Far-OTM SPY puts cost real money
+  against $20k. It stays in — it's the reason the system survives a crash — but sized to
+  perhaps 3–5% rather than 5–10%, and we lean on put ratio backspreads, which can be
+  structured for little or no net debit
+
+### XSP is the thing to watch
+
+Alpaca added **index options in paper trading on July 23, 2026** — SPX, SPXW, VIX, VIXW,
+DJX, and **XSP**. XSP is one-tenth the size of SPX, and for a small account it's close to
+ideal:
+
+- **Cash-settled and European-style** — no early assignment, no pin risk turning a defined
+  spread into an overnight naked position
+- **Section 1256 tax treatment** (60% long-term / 40% short-term regardless of holding
+  period) — a genuine, structural after-tax advantage over SPY options in a taxable account
+- Sized so a small account can build real positions
+
+**Caveat: index options are paper-only on Alpaca right now**, with live "coming soon." So:
+build and validate on XSP in paper, and plan for SPY/ETF options as the live fallback if
+index options haven't gone live by the time we're ready. The strategy code shouldn't care
+which — that's an argument for keeping the instrument choice in config.
+
+### Still open — I need these to proceed
+
+1. **Capital, as a number.** "Under $25k" spans $5k and $24k, and those are different
+   systems. Below roughly $10k I'd argue the fixed data cost makes this not worth doing yet
+2. **Margin or cash account?** Spreads require margin approval — a cash account caps you at
+   Level 1–2 (long options, covered calls, cash-secured puts) and most of this plan
+   becomes unavailable
+3. **Max drawdown you can actually stomach, as a percentage.** Not "not much." Every risk
+   limit in Section 5 derives from this single number
+4. **Alpaca account + Level 3 options approval** — apply now, it's the long pole
+5. **Paper trading API keys** once you have them
+
+Defaults I'll assume unless you say otherwise: universe starts with liquid ETFs (SPY, QQQ,
+IWM) plus ~40–60 large caps; fully autonomous in paper with a human approval gate for early
+live trading; hosted on a small VPS.
+
+### Worth saying plainly
+
+This is your capital. This plan has more risk controls than most retail systems, but
+**systematic options trading loses money for most people who attempt it**, and a small
+account has thinner margins for error than a large one. No number in this document is a
+projection or a promise. The kill switches in Section 5 exist because they will eventually
+fire. Your instinct to prove the edge in paper first is the correct one, and it's the gate
+I'd hold you to even if you hadn't asked for it.
 
 ---
 
@@ -211,9 +269,10 @@ hedge pay.
 - Also the reverse: buy cheap vol into known catalysts when IV hasn't priced them
 
 **Sleeve E — 0DTE intraday (0% initially, gated)**
-- SPX/SPY 0DTE using opening range, GEX levels, VWAP
-- **Disabled at launch.** Requires: Tier 3 data, a $25k+ account (PDT), and 6 months of
-  proven live performance in Sleeves A–D. High variance and genuinely dangerous
+- SPXW/SPY 0DTE using opening range, GEX levels, VWAP
+- **Disabled at launch.** Requires: flow/GEX data, confirmation that day-trade counting no
+  longer applies (see Section 2), and 6 months of proven live performance in Sleeves A–D.
+  High variance and genuinely dangerous — the PDT repeal makes this *possible*, not *advisable*
 
 ### 3.4 Ticker screening — "meets your criteria"
 
@@ -292,7 +351,99 @@ times entry.
 
 ---
 
-## 4. Architecture
+## 4. What we're actually building
+
+You asked two fair questions: what's the stack, and what is this "data warehouse." The
+previous draft listed options instead of making calls. Here are the calls.
+
+### 4.1 The whole thing is three programs sharing one library
+
+That's the clearest way to think about it. Not a platform — three programs:
+
+| # | Program | Runs | Job |
+|---|---|---|---|
+| 1 | **Loader** | Nightly, ~10 min | Pull yesterday's data from vendors, clean it, append it to local storage |
+| 2 | **Backtester** | On demand | Replay stored history through the strategy, simulate fills, produce a performance report |
+| 3 | **Trader** | Every morning, ~1 min | Read today's data, run **the same strategy code**, place real orders at Alpaca |
+
+The critical part is that **2 and 3 import the identical strategy module**. The backtester
+feeds it historical data; the trader feeds it live data. Neither knows the difference. This
+is the single most important design decision in the project, because the standard way these
+systems fail is that the backtest and the live bot quietly diverge and nobody notices until
+real money is gone.
+
+### 4.2 The stack — decided
+
+| Layer | Choice | Why |
+|---|---|---|
+| Language | **Python 3.12** | Every options/quant library lives here |
+| Dataframes | **Polars** | Much faster than pandas on the row counts we'll hit; pandas only where a library demands it |
+| Storage | **DuckDB + Parquet files** | This *is* the "data warehouse." See below |
+| Broker + live data | **`alpaca-py`** | Official SDK |
+| Greeks / IV | **`py_vollib`** | Fast Black-Scholes-Merton. ThetaData ships greeks anyway; this fills gaps and cross-checks |
+| Config | **YAML validated by Pydantic** | Strategy params never hardcoded; every trade logs its config hash |
+| Dashboard | **Streamlit** | ~200 lines gets positions, greeks, P&L, and risk-limit gauges. One user, one screen |
+| Tests | **pytest** | |
+| Scheduling | **cron** | It's three jobs a day |
+| Hosting | **Docker on a $10–20/mo VPS** (Hetzner or DigitalOcean, us-east) | |
+| CI | **GitHub Actions** | Tests on every push |
+
+**Explicitly rejected, so there's no ambiguity:**
+
+- ~~FastAPI + React dashboard~~ — I proposed this in the first draft and it was overkill. Streamlit, for one user
+- ~~Postgres / TimescaleDB~~ — a database server you'd have to run and back up, for data that one person queries. DuckDB reads Parquet directly
+- ~~Kafka, Airflow, dbt~~ — orchestration for a pipeline that is three cron jobs
+- ~~Snowflake / BigQuery~~ — cloud warehouses for datasets that fit on a laptop
+- ~~Backtrader, Zipline, VectorBT~~ — **the important one.** These are equities-first. None of them model multi-leg options positions against real historical chains with bid/ask, per-leg greeks, assignment, and expiration. Trying to bend them into doing it is more work than writing the engine, and you inherit assumptions you can't see. This is the honest reason we build our own
+
+Total infrastructure cost: **~$10–20/mo**.
+
+### 4.3 What the "data warehouse" actually is
+
+The term oversells it. **It is a folder of files on disk, plus a library that runs SQL
+against them.** No server, no cluster, nothing to administer.
+
+```
+warehouse/
+├── option_chains/      # the big one: every contract, every day
+│   └── date=2024-03-15/underlying=SPY/data.parquet
+├── equity_bars/        # daily + minute OHLCV for underlyings
+├── vol_indices/        # VIX, VIX9D, VIX3M, SKEW, put/call ratios
+├── macro/              # FRED series, credit spreads, yield curve
+├── events/             # earnings dates, dividends, splits, econ calendar
+└── features/           # computed indicators, cached
+```
+
+`option_chains` holds, for every trading day and every contract: strike, expiration, bid,
+ask, last, volume, open interest, IV, and greeks. That's the raw material every backtest
+runs on. For ~60 tickers across ~4 years, expect roughly **10–40 GB** after Parquet
+compression. It fits on a laptop SSD.
+
+DuckDB queries it with plain SQL — `SELECT * FROM 'warehouse/option_chains/**/*.parquet'
+WHERE ...` — with no import step and no server process.
+
+**Why not just call the vendor API each time we need data?** Four reasons, and the fourth
+is the real one:
+
+1. **Speed.** A single backtest touches millions of rows. Over the API that's hours; from
+   local Parquet it's seconds. You will run the backtest *hundreds* of times while
+   developing — this difference decides whether the project is workable
+2. **Cost.** Vendors rate-limit and meter. Download once, query forever. It's also what
+   lets us cancel ThetaData after the research phase and keep the data
+3. **Reproducibility.** The same backtest returns the same answer in six months. Vendor
+   APIs silently revise history
+4. **Point-in-time correctness — the one that actually matters.** Vendors hand you *today's*
+   view of the past. Earnings dates get rescheduled, dividends get revised, index membership
+   changes, tickers get renamed. If a 2022 backtest looks up an earnings date using a 2026
+   calendar, the bot "knew" a date that hadn't been announced yet. That's lookahead bias, it
+   is completely invisible in the results, and it manufactures profit that does not exist.
+   The fix is storing a `knowable_at` timestamp on every row and filtering every query by it.
+   **No vendor does this for you.** It is the specific reason we build this piece ourselves
+
+The live trader writes into the same warehouse each day, so tomorrow's backtest
+automatically includes today. Research and production share one source of truth.
+
+### 4.4 Repo layout
 
 ```
 options-bot/
@@ -322,10 +473,14 @@ options-bot/
 │   ├── backtest.py    # historical replay
 │   └── live.py        # same code path, different data source
 ├── monitoring/
-│   ├── dashboard/     # positions, greeks, P&L attribution, limit utilization
+│   ├── dashboard.py   # Streamlit: positions, greeks, P&L attribution, limit utilization
 │   └── alerts/        # push on limit breach, kill switch, reconciliation failure
 └── config/            # YAML, version-controlled, hash-logged with every trade
 ```
+
+Mapping back to Section 4.1: the **Loader** is `data/`, the **Backtester** is
+`engine/backtest.py`, the **Trader** is `engine/live.py`, and `strategy/` + `features/` +
+`risk/` are the shared library both of them call.
 
 **Non-negotiable architectural rules:**
 
@@ -341,9 +496,8 @@ options-bot/
 4. **Reconciliation loop.** Every N minutes, compare the bot's internal position state
    against the broker's actual positions. Mismatch = halt and alert. Assume divergence will
    happen, because it will.
-
-**Stack:** Python 3.12 · Polars/Pandas · DuckDB + Parquet · `py_vollib`/QuantLib for greeks ·
-`alpaca-py` · FastAPI + a small React dashboard · Docker · pytest.
+5. **Day-trade guard.** Per Section 2 — a counter plus a no-same-day-close rule, active
+   while Alpaca still enforces day-trade counting.
 
 ---
 
@@ -450,10 +604,14 @@ the 3-month paper gate. Anyone promising faster is skipping the parts that preve
 ## 8. Immediate next steps
 
 **You:**
-1. Answer the Section 2 blocking questions
-2. Open the Alpaca account and apply for **Level 3** options approval (do this today — it's the long pole)
-3. Decide on the data tier and purchase; ThetaData is the key one
+1. Open the Alpaca account and apply for **Level 3** options approval — do this first, it's
+   the long pole, and confirm it's a **margin** account
+2. Ask Alpaca support: *is day-trade counting still enforced on sub-$25k margin accounts,
+   or have you implemented the June 2026 Rule 4210 changes?*
+3. Tell me the capital number and your max acceptable drawdown percentage
 4. Send me paper trading API keys
+5. Hold off on ThetaData until I've built the loader — no reason to start the meter running
+   before there's something to load into
 
 **Me, once I have the above:**
 1. Scaffold the repo per Section 4 with CI and test harness
@@ -478,3 +636,7 @@ the 3-month paper gate. Anyone promising faster is skipping the parts that preve
 - [Best Options Data APIs 2026 — comparison](https://flashalpha.com/articles/best-options-data-apis-2026)
 - [Unusual Whales](https://unusualwhales.com/)
 - [Quant Data — Gamma Exposure API](https://help.quantdata.us/en/articles/15807345-gamma-exposure-gex-api-python-quickstart-dealer-positioning-guide)
+- [Index Options Now in Paper on Alpaca's Trading API](https://alpaca.markets/blog/alpaca-introduces-index-options-paper-trading/)
+- [WilmerHale — SEC Approves Amendments to FINRA Rule 4210 Replacing Day Trading Margin Requirements](https://www.wilmerhale.com/en/insights/client-alerts/20260423-sec-approves-amendments-to-finra-rule-4210-replacing-day-trading-margin-requirements-with-a-modernized-intraday-margin-standard)
+- [Schwab — SEC Approves Scrapping $25,000 Day Trader Minimum](https://www.schwab.com/learn/story/sec-approves-scrapping-25000-day-trader-minimum)
+- [Cboe — XSP (Mini-SPX) Options](https://www.cboe.com/tradable-products/sp-500/xsp-options)
