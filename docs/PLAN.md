@@ -170,17 +170,71 @@ build and validate on XSP in paper, and plan for SPY/ETF options as the live fal
 index options haven't gone live by the time we're ready. The strategy code shouldn't care
 which — that's an argument for keeping the instrument choice in config.
 
-### Still open — I need these to proceed
+### Margin vs cash — decided, and there's nothing to choose
 
-1. **Capital, as a number.** "Under $25k" spans $5k and $24k, and those are different
-   systems. Below roughly $10k I'd argue the fixed data cost makes this not worth doing yet
-2. **Margin or cash account?** Spreads require margin approval — a cash account caps you at
-   Level 1–2 (long options, covered calls, cash-secured puts) and most of this plan
-   becomes unavailable
-3. **Max drawdown you can actually stomach, as a percentage.** Not "not much." Every risk
-   limit in Section 5 derives from this single number
-4. **Alpaca account + Level 3 options approval** — apply now, it's the long pole
-5. **Paper trading API keys** once you have them
+**Alpaca opens every account as a margin account.** Margin and short-selling features
+switch on automatically once equity reaches **$2,000**; below that the account is
+restricted to 1x buying power and behaves like a cash account. So there's no application
+to fill out — but there *is* a threshold, and it matters more than it looks.
+
+To be clear about what "margin" means here: **we are not borrowing money.** For a
+defined-risk spread, the margin requirement simply *is* the max loss. Margin approval is
+the mechanism that lets you hold spreads at all; it isn't leverage. This plan never uses
+borrowed capital.
+
+### Capital staging — the $1,000 problem
+
+The instinct to start live with a small amount is **correct risk management** and I don't
+want to talk you out of it. But options have a minimum viable granularity, and $1,000 is
+under it. Three separate walls:
+
+1. **The $2,000 margin threshold.** Below $2,000, Alpaca restricts to 1x buying power. FINRA
+   Rule 4210 independently requires $2,000 equity before any margin trade. Credit spreads
+   need margin. **At $1,000, the core strategy is not executable at all** — this is a hard
+   stop, not a preference
+2. **Position granularity.** Even above $2,000: the smallest sensible structure is a SPY
+   $1-wide put credit spread, risking ~$70 after credit. On a $1,000 account that is **7% of
+   equity on a single trade**. The plan's 1–2% per-trade limit would be $10–20, and no
+   options spread can be constructed that risks $15. You'd be running 1–2 positions at 7%
+   risk each — not a portfolio, and every portfolio-level control in Section 5 (beta-weighted
+   delta bands, correlation limits, sleeve diversification) becomes meaningless
+3. **Fixed costs.** $99/mo of market data against $1,000 is **119% per year**. You'd need to
+   more than double the account annually just to break even on data
+
+**Recommended live minimum: $5,000. Preferred: $10,000.** At $10k, $1–2-wide spreads risk
+1–2% as designed, 5–8 concurrent positions is achievable, and data costs fall to ~12%/yr.
+
+**If $1,000 is genuinely your ceiling for now, the right move is to stay in paper longer.**
+Going live at $1,000 costs real money in data and tells you almost nothing — at 1–2
+positions you'd generate maybe 30–50 trades a year, nowhere near enough to distinguish edge
+from luck.
+
+### Paper at $100k tests the wrong thing
+
+Alpaca's paper default is $100,000. **Leave it there and we'll validate a strategy you can't
+actually run.** Sizing, position count, and which structures are even constructible are all
+different at $100k than at $10k — we'd prove out one system and deploy a different one.
+This is a genuinely common way these projects fail.
+
+The fix is to separate two questions that need two different tests:
+
+| Question | Test | Setup |
+|---|---|---|
+| **Does the strategy have an edge?** | Backtest over 4+ years of history — thousands of trades, all stress windows | The warehouse. This is where statistical significance comes from |
+| **Does it survive real portfolio constraints?** | **Paper account set to ~$25k** | Real position counts, real granularity, real correlation |
+| **Does the plumbing work?** | **Paper account set to your actual live size** | Orders route, fills match model, reconciliation holds, kill switches fire |
+
+So: **reconfigure paper to $25k**, and run a second paper account at whatever you'll
+actually deploy. When you do go live, the first months are judged on **slippage versus
+model, not P&L** — small live money is an operational smoke test, and treating its P&L as
+evidence of edge is a statistical error.
+
+### Still open
+
+1. **Confirm your live starting capital** given the $5k floor above — this is the one
+   remaining decision
+2. **Alpaca account + Level 3 options approval** — apply now, it's the long pole
+3. **Paper trading API keys** once you have them
 
 Defaults I'll assume unless you say otherwise: universe starts with liquid ETFs (SPY, QQQ,
 IWM) plus ~40–60 large caps; fully autonomous in paper with a human approval gate for early
@@ -506,6 +560,70 @@ Mapping back to Section 4.1: the **Loader** is `data/`, the **Backtester** is
 This section matters more than the strategy section. Strategies decay; risk controls are
 what keep you solvent long enough to build the next one.
 
+### 5.1 On the 2:1 requirement — the concern is right, the metric isn't
+
+You asked for at least 2:1 reward-to-risk. I want to engage with this seriously rather than
+just agree, because **applied per-trade it would invert the entire strategy.**
+
+A 16-delta put credit spread — Sleeve A, the income core — risks roughly $180 to make $60.
+That's **1:3** reward-to-risk, with an ~85% win rate. That's not a flaw in the structure;
+that *is* the structure. Selling options means small frequent gains and rare larger losses.
+Requiring 2:1 per trade would delete Sleeve A entirely and push everything into buying
+premium — which is the **negative**-expectancy side of the variance risk premium, the exact
+trade this plan is designed to be on the other side of.
+
+The reason RR alone can't be a rule: expectancy is
+`(win% × avg win) − (loss% × avg loss)`, and neither term means anything without the other.
+
+| Strategy | RR | Win rate | Expectancy per $1 risked |
+|---|---|---|---|
+| Trend-following | 2:1 | 30% | (0.30 × 2) − (0.70 × 1) = **−0.10 — loses money** |
+| Sleeve A premium selling | 1:3 | 85% | (0.85 × 1) − (0.15 × 3) = **+0.40 — makes money** |
+
+A 2:1 filter would reject the profitable row and accept the losing one.
+
+**But your underlying instinct is exactly right**, and it's the single most important thing
+to worry about with this strategy. You're describing *"picking up pennies in front of a
+steamroller"* — the fear that one loss erases ten wins. That is the definitive failure mode
+of premium selling, and it's precisely what destroyed the "Karen the Supertrader" account
+referenced in Section 3.1. You've identified the right risk. It just needs to be enforced
+with metrics that can actually capture it.
+
+**So we keep your 2:1 — measured at the system level, where it's meaningful:**
+
+- **Profit factor ≥ 2.0** (gross wins ÷ gross losses). This is your 2:1, stated correctly:
+  across all trades, total winnings must be double total losses. A strategy where one
+  steamroller eats ten winners *fails this test by definition*. Backtest gate: reject any
+  sleeve below **1.3**; target 2.0
+- **Calmar ratio ≥ 0.5** (annual return ÷ max drawdown) — return per unit of pain
+- **Tail ratio** — worst 5% of outcomes vs best 5%, tracked explicitly
+- **Per-trade loss cap via the 2× credit stop.** Rather than risking the full $180 spread
+  width, we exit at 2× the credit received (~$120). In practice this pulls realized RR from
+  1:3 up to roughly **1:2** — you get most of what you asked for, at the trade level,
+  without breaking the strategy
+- **Sleeve C exists for exactly this reason.** The tail hedge is what makes the steamroller
+  pay us instead of flattening us. It's why it can never be disabled for underperformance
+
+### 5.2 Drawdown limits
+
+You said you want room to let trades play out. Agreed — stops that are too tight on a
+premium-selling strategy convert winners into losers, because these positions routinely go
+against you before mean-reverting. So the room lives at the trade level, and the hard limits
+live at the portfolio level:
+
+| Level | Limit | Action |
+|---|---|---|
+| Per trade | Loss reaches **2× credit received** | Close the position |
+| Sleeve | **3 consecutive losses** | Pause that sleeve, flag for review |
+| Monthly | **−8%** from month start | Halve position sizing for the rest of the month |
+| **Hard kill** | **−20%** from high-water mark | Flatten everything except Sleeve C, human required to restart |
+
+Paired with a realistic target return, a 20% max drawdown implies a Calmar near 0.75–1.25,
+which is a respectable and *achievable* profile. If backtests show materially better than
+that, the presumption is a bug in the cost model — not a discovery.
+
+### 5.3 Position and portfolio limits
+
 **Per trade**
 - Max loss ≤ 1–2% of account equity (defined-risk structures make this exact)
 - Position sizing: **quarter-Kelly**, capped. Full Kelly is theoretically optimal and
@@ -525,12 +643,10 @@ what keep you solvent long enough to build the next one.
   gross exposure gets cut automatically
 
 **Circuit breakers (automatic, no discretion)**
-- Daily loss limit → halt new entries for the session
-- Weekly loss limit → halt, require manual review
-- Max drawdown from high-water mark → **full kill switch**, flatten to hedge-only, human required to restart
-- N consecutive losing trades → pause that sleeve, review
+- The four loss limits in the §5.2 table, enforced in code
 - Data staleness / quote gap / broker disconnect → halt entries immediately
 - Reconciliation mismatch → halt everything
+- Day-trade counter at its limit → block same-day closes (see §2)
 
 **Assignment and expiration**
 - Auto-close short legs at 21 DTE (already in Sleeve A rules)
@@ -568,14 +684,23 @@ will make almost any strategy look profitable.
 - Minimum ~200 trades per sleeve before any conclusion
 - Monte Carlo trade-order reshuffling to get a realistic drawdown distribution
 
-**Metrics that actually matter:** CAGR, max drawdown, **Sharpe and Sortino**, Calmar,
-win rate paired with win/loss ratio (win rate alone is meaningless for premium selling —
-85% win rates are trivial and frequently disastrous), tail ratio, worst single day, worst
-month, P&L attribution by sleeve and by regime.
+**Metrics that actually matter, with gates:**
 
-**Paper trading gate:** minimum **3 months** live paper before any real capital. The
-comparison that matters is *paper fills vs backtest-assumed fills*. If live slippage
-exceeds the model, the backtest was fiction and we go back to Section 6.
+| Metric | Gate | Why |
+|---|---|---|
+| **Profit factor** | ≥ 1.3 to pass, **2.0 target** | Your 2:1, correctly stated (§5.1) |
+| **Calmar** | ≥ 0.5 | Return per unit of drawdown |
+| Max drawdown | ≤ 20% | Matches the hard kill switch |
+| Sharpe / Sortino | Reported, Sortino weighted higher | Sortino ignores upside vol, which we don't mind |
+| Tail ratio | Reported | Directly measures the steamroller risk |
+| Win rate | Reported **only alongside** win/loss ratio | Alone it's meaningless — 85% win rates are trivial and frequently disastrous |
+| Worst day / worst month | Reported | |
+| P&L attribution | By sleeve and by regime | Tells us *which* part works |
+
+**Paper trading gate:** minimum **3 months** paper before any real capital, run at the
+~$25k sizing described in §2 — not at Alpaca's $100k default. The comparison that matters
+is *paper fills vs backtest-assumed fills*. If live slippage exceeds the model, the
+backtest was fiction and we come back to this section.
 
 ---
 
@@ -591,9 +716,9 @@ exceeds the model, the backtest was fiction and we go back to Section 6.
 | **5. Risk layer** | 2 wks | Limits, circuit breakers, beta weighting, reconciliation | Every breaker fires correctly in simulation |
 | **6. Sleeves B + C** | 3 wks | Directional + tail hedge | Portfolio-level results beat Sleeve A alone on Calmar |
 | **7. Execution + paper** | 2 wks | Alpaca integration, multi-leg routing, dashboard | Paper trades executing, fills tracked vs model |
-| **8. Paper trading** | **3 months** | Live paper operation | Live slippage within model; no unexplained divergence |
+| **8. Paper trading** | **3 months** | Paper at $25k sizing, plus a second paper account at live size | Profit factor ≥ 1.3; live slippage within model; no unexplained divergence |
 | **9. Sleeve D** | 2 wks | Earnings / IV crush | Passes validation |
-| **10. Live, small** | 3+ months | Real money at ~10–20% of intended size | Live results consistent with paper |
+| **10. Live, small** | 3+ months | Real money, **$5k minimum** (§2) | **Judged on slippage vs model, not P&L** — this is a plumbing test |
 | **11. Scale / Sleeve E** | — | Size up, consider 0DTE | Sustained live performance |
 
 **Realistic timeline to first live dollar: ~6–8 months.** Most of that is Phases 1–3 and
@@ -605,12 +730,14 @@ the 3-month paper gate. Anyone promising faster is skipping the parts that preve
 
 **You:**
 1. Open the Alpaca account and apply for **Level 3** options approval — do this first, it's
-   the long pole, and confirm it's a **margin** account
-2. Ask Alpaca support: *is day-trade counting still enforced on sub-$25k margin accounts,
-   or have you implemented the June 2026 Rule 4210 changes?*
-3. Tell me the capital number and your max acceptable drawdown percentage
-4. Send me paper trading API keys
-5. Hold off on ThetaData until I've built the loader — no reason to start the meter running
+   the long pole. No margin decision needed; Alpaca opens all accounts as margin
+2. **Reset the paper account from $100k to $25k** (§2 — otherwise we validate a strategy
+   you can't run)
+3. Ask Alpaca support: *is day-trade counting still enforced on sub-$25k accounts, or have
+   you implemented the June 2026 Rule 4210 changes?*
+4. Confirm live starting capital given the **$5k floor** in §2
+5. Send me paper trading API keys
+6. Hold off on ThetaData until I've built the loader — no reason to start the meter running
    before there's something to load into
 
 **Me, once I have the above:**
@@ -640,3 +767,6 @@ the 3-month paper gate. Anyone promising faster is skipping the parts that preve
 - [WilmerHale — SEC Approves Amendments to FINRA Rule 4210 Replacing Day Trading Margin Requirements](https://www.wilmerhale.com/en/insights/client-alerts/20260423-sec-approves-amendments-to-finra-rule-4210-replacing-day-trading-margin-requirements-with-a-modernized-intraday-margin-standard)
 - [Schwab — SEC Approves Scrapping $25,000 Day Trader Minimum](https://www.schwab.com/learn/story/sec-approves-scrapping-25000-day-trader-minimum)
 - [Cboe — XSP (Mini-SPX) Options](https://www.cboe.com/tradable-products/sp-500/xsp-options)
+- [Alpaca Docs — Margin and Short Selling](https://docs.alpaca.markets/us/docs/margin-and-short-selling)
+- [Alpaca Support — What determines the margin for my account?](https://alpaca.markets/support/determine-margin-account)
+- [FINRA Rule 4210 — Margin Requirements](https://www.finra.org/rules-guidance/guidance/interps-4210)
