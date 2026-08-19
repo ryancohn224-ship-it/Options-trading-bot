@@ -4,9 +4,15 @@ A systematic options trading system designed to be direction-agnostic — harves
 variance risk premium in calm and rising markets, rotating short-delta in declines, and
 carrying a permanent income-financed tail hedge for crashes.
 
-**Status: planning. No code yet.**
+**Status: planning, with one sleeve built and running in paper.**
 
 ## Start here
+
+🤖 **[docs/AGENT.md](docs/AGENT.md)** — the scheduled 0DTE iron condor agent. Built,
+tested, paper only. A short-lived process wakes on a schedule, runs nine gates over
+today's chain, trades or stands down, and journals every session either way. This is
+the operational half of the project working end to end while the research half is
+still being built.
 
 📄 **[docs/PLAN.md](docs/PLAN.md)** — the full development plan.
 
@@ -30,6 +36,19 @@ constrains.
 Python 3.12 · Polars · DuckDB + Parquet · `alpaca-py` · `py_vollib` · Streamlit · Docker.
 Three programs sharing one strategy library: a nightly **loader**, an on-demand
 **backtester**, and a daily **trader**. See [§4](docs/PLAN.md#4-what-were-actually-building).
+
+## What runs today
+
+```bash
+cd agent && python -m venv .venv && .venv/bin/pip install -e '.[broker,dev]'
+.venv/bin/pytest                                          # 93 tests, no keys needed
+.venv/bin/trading-agent --config config/agent.yaml demo   # a full synthetic session
+```
+
+The agent is one sleeve, not the five in the plan, and its edge is **not proven** — a
+short condor is risk-neutral-fair by construction, so everything rests on the variance
+risk premium surviving at 0DTE, which the backtest in [§6](docs/PLAN.md#6-backtesting-and-validation)
+has not yet tested. Treat its paper P&L as a plumbing test.
 
 ## Open questions
 

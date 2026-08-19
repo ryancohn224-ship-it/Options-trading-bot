@@ -1,0 +1,24 @@
+# Scheduled 0DTE iron condor agent.
+#
+# Install with: crontab ops/crontab.example
+# Times are the SERVER's local time. If the server is not on US Eastern, either set
+# CRON_TZ below or convert by hand — the agent re-checks its own entry window in
+# exchange time and will stand down if cron fires it outside that window, so a wrong
+# timezone here fails safe (no trades) rather than dangerously (trades at the open).
+
+CRON_TZ=America/New_York
+AGENT=/opt/options-trading-bot/agent
+CONFIG=$AGENT/config/agent.yaml
+RUN=$AGENT/.venv/bin/trading-agent --config $CONFIG --broker alpaca --source alpaca
+
+# One entry attempt, just after the opening auction has settled.
+15 10 * * 1-5  cd $AGENT && $RUN open        >> var/log/open.log 2>&1
+
+# Management passes: profit target, stop, and the hard flatten.
+*/5 10-15 * * 1-5  cd $AGENT && $RUN manage  >> var/log/manage.log 2>&1
+
+# One more pass after force_flat, in case the 15:45 attempt did not fill.
+50,55 15 * * 1-5   cd $AGENT && $RUN manage  >> var/log/manage.log 2>&1
+
+# Weekly read of the journal. This is the one that actually improves the system.
+0 8 * * 6      cd $AGENT && $RUN review --limit 60 >> var/log/review.log 2>&1

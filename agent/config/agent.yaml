@@ -1,0 +1,68 @@
+# Effective configuration for the 0DTE iron condor agent.
+#
+# Every value here is bounded in code (agent/src/trading_agent/config.py). This file
+# can tune the strategy inside those bounds; it cannot remove a risk limit. Editing a
+# value changes the config hash, and the hash is stamped on every journal entry, so
+# any past session can be reconstructed exactly.
+
+mode: paper                      # `live` additionally requires TRADING_AGENT_ALLOW_LIVE
+
+market:
+  underlying: SPY
+  timezone: America/New_York
+  dte: 0
+  risk_free_rate: 0.04
+
+schedule:
+  entry_start: "10:00"           # the first 30 minutes price the overnight gap, not the day
+  entry_cutoff: "12:30"          # after this there is not enough theta left to pay for the tail
+  manage_interval_seconds: 300
+  force_flat: "15:45"            # never carry a 0DTE short into settlement
+
+structure:
+  short_delta: 0.16              # ~1 sigma
+  wing_width: 1.0
+  strike_increment: 1.0
+
+gate:
+  min_credit_ratio: 0.12         # reward-to-risk floor, not an edge claim
+  min_side_credit_ratio: 0.06    # both sides must contribute, or it is a directional trade
+  max_leg_spread_abs: 0.10
+  max_leg_spread_pct: 0.60
+  min_leg_size: 10
+  min_strike_buffer_sigma: 0.85
+  max_open_gap_pct: 0.015
+  min_atm_iv: 0.06
+  max_atm_iv: 0.45
+  min_vrp: 0.15                  # THE edge condition: implied must exceed realized by 15%
+  realized_vol_lookback: 20
+
+risk:
+  max_risk_pct: 0.02             # defined risk per condor, as a fraction of equity
+  max_contracts: 10
+  max_entries_per_day: 1
+  min_equity: 5000.0             # see docs/PLAN.md section 2 on why $1,000 does not work
+  max_daily_loss_pct: 0.03
+  max_consecutive_loss_days: 3
+  buying_power_headroom: 0.5
+
+exits:
+  profit_target: 0.50            # close for half the credit received
+  stop_multiple: 2.0             # close if the exit debit reaches 2x the credit
+
+execution:
+  ladder_steps: 4
+  ladder_step_seconds: 20
+  ladder_max_concession: 1.0     # walk from mid down to the gated credit, never below
+  exit_slippage_allowance: 0.10
+
+llm:
+  enabled: false                 # set true once `claude` is on PATH; veto-only either way
+  command: ["claude", "-p"]
+  timeout_seconds: 120
+  fail_open: true
+
+paths:
+  state_dir: var/state
+  journal_dir: var/journal
+  kill_switch_file: var/state/KILL_SWITCH
