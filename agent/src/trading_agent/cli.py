@@ -17,7 +17,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -26,8 +26,12 @@ from .clock import Clock
 from .config import AgentConfig, load_config
 from .journal import Journal, render_markdown
 from .marketdata import SyntheticChainSource
+from .research import ResearchLog, check_promotion
 from .session import Session
+from .snapshot import SnapshotStore
 from .state import Store
+from .variants import champion as champion_of
+from .variants import load_variants, save_variants
 
 
 def _build(config: AgentConfig, args) -> Session:
@@ -61,6 +65,8 @@ def _build(config: AgentConfig, args) -> Session:
         store=Store(config.paths.state_dir),
         journal=Journal(config.paths.journal_dir),
         env=env,
+        snapshots=SnapshotStore(config.paths.snapshot_dir),
+        fidelity="live" if args.source == "alpaca" else "synthetic",
     )
 
 
@@ -216,6 +222,140 @@ def _cmd_show(config: AgentConfig, args) -> int:
     return 0
 
 
+
+
+# -- research ----------------------------------------------------------------------
+
+
+def _cmd_simulate(config: AgentConfig, args) -> int:
+    """Generate synthetic sessions so the research loop has something to chew on.
+
+    Everything written is stamped `synthetic` and can never promote a variant. This
+    exercises the machinery; it says nothing about the market.
+    """
+    from .simulate import simulate
+
+    store = SnapshotStore(config.paths.snapshot_dir)
+    written = simulate(store, config, days=args.days, seed=args.seed)
+    print(f"wrote {len(written)} synthetic sessions to {config.paths.snapshot_dir}")
+    print(f"  {written[0]} .. {written[-1]}")
+    print("\nSynthetic days prove the pipeline runs. They cannot promote anything.")
+    return 0
+
+
+def _cmd_replay(config: AgentConfig, args) -> int:
+    from .report import evaluate_all
+
+    store = SnapshotStore(config.paths.snapshot_dir)
+    if not store.days():
+        print(f"no snapshots in {config.paths.snapshot_dir} — run `simulate` or trade a session")
+        return 1
+    variants = load_variants(config.paths.variants_file)
+    if args.variant:
+        variants = [v for v in variants if v.name == args.variant] or variants
+    runs = evaluate_all(store, config, variants, equity=args.equity)
+
+    print(f"{'variant':22} {'trades':>6} {'rate':>5} {'win%':>5} {'meanR':>7} "
+          f"{'total':>9} {'holdout R':>10}  verdict")
+    from .report import _rank
+
+    for run in _rank(runs):
+        s, h = run.research, run.holdout
+        print(f"{run.variant.name:22} {s.trades:6d} {s.trade_rate:5.0%} {s.win_rate:5.0%} "
+              f"{s.mean_r:+7.3f} {s.total_pnl:+9.0f} "
+              f"{(f'{h.mean_r:+.3f}' if args.show_holdout else '  hidden'):>10}  {s.verdict}")
+    if not args.show_holdout:
+        print("\nHoldout column hidden. Opening it is a decision — use `promote`, which logs it.")
+    return 0
+
+
+def _cmd_report(config: AgentConfig, args) -> int:
+    from . import report as report_mod
+
+    day = date.fromisoformat(args.day) if args.day else datetime.now(
+        ZoneInfo(config.market.timezone)
+    ).date()
+    text = report_mod.render(
+        store=SnapshotStore(config.paths.snapshot_dir),
+        config=config,
+        variants=load_variants(config.paths.variants_file),
+        log=ResearchLog(config.paths.research_dir),
+        journal_dir=config.paths.journal_dir,
+        day=day,
+        equity=args.equity,
+    )
+    out = Path(config.paths.report_dir) / f"{day.isoformat()}.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text)
+    print(text)
+    print(f"\n[written to {out}]")
+    return 0
+
+
+def _cmd_propose(config: AgentConfig, args) -> int:
+    """Pre-register a hypothesis before looking at whether it worked."""
+    log = ResearchLog(config.paths.research_dir)
+    log.propose(args.variant, args.hypothesis, args.criterion)
+    print(f"registered proposal for `{args.variant}`")
+    print("  hypothesis:", args.hypothesis)
+    print("  criterion :", args.criterion)
+    return 0
+
+
+def _cmd_promote(config: AgentConfig, args) -> int:
+    """Open the holdout for one challenger and decide. Every call is logged."""
+    from .report import evaluate_all
+
+    store = SnapshotStore(config.paths.snapshot_dir)
+    variants = load_variants(config.paths.variants_file)
+    names = {v.name for v in variants}
+    if args.variant not in names:
+        print(f"unknown variant {args.variant!r}; known: {', '.join(sorted(names))}")
+        return 1
+
+    runs = {r.variant.name: r for r in evaluate_all(store, config, variants, equity=args.equity)}
+    incumbent = champion_of(variants)
+    log = ResearchLog(config.paths.research_dir)
+    log.record_holdout_look(args.variant, args.reason or "promotion check")
+
+    verdict = check_promotion(
+        challenger=args.variant,
+        research_challenger=runs[args.variant].research,
+        research_champion=runs[incumbent.name].research,
+        holdout_challenger=runs[args.variant].holdout,
+        holdout_looks=log.holdout_looks(),
+    )
+    print(verdict)
+
+    if verdict.approved and args.apply:
+        rebuilt = [
+            type(v)(v.name, v.overrides, v.note,
+                    "champion" if v.name == args.variant
+                    else ("challenger" if v.status == "champion" else v.status),
+                    v.retired_reason)
+            for v in variants
+        ]
+        save_variants(rebuilt, config.paths.variants_file)
+        promoted = next(v for v in rebuilt if v.name == args.variant)
+        log.record_promotion(verdict, incumbent.name, promoted.name)
+        print(f"\n`{args.variant}` is now champion. Copy its overrides into "
+              f"{config.paths.variants_file}'s champion entry and agent.yaml to trade it.")
+    elif verdict.approved:
+        print("\nApproved but not applied. Re-run with --apply to make it champion.")
+    else:
+        log.record_promotion(verdict, incumbent.name, incumbent.name)
+    return 0
+
+
+def _cmd_variants(config: AgentConfig, args) -> int:
+    for v in load_variants(config.paths.variants_file):
+        mark = {"champion": "👑", "challenger": "  ", "retired": "💀"}[v.status]
+        print(f"{mark} {v.name:22} {v.overrides}")
+        if v.note:
+            print(f"     {v.note}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="trading-agent", description=__doc__)
     parser.add_argument("--config", default=None, help="path to agent.yaml")
@@ -238,6 +378,35 @@ def main(argv: list[str] | None = None) -> int:
     review = sub.add_parser("review")
     review.add_argument("--limit", type=int, default=60)
     review.set_defaults(func=_cmd_review)
+
+    sim = sub.add_parser("simulate", help="generate synthetic sessions")
+    sim.add_argument("--days", type=int, default=120)
+    sim.add_argument("--seed", type=int, default=4)
+    sim.set_defaults(func=_cmd_simulate)
+
+    rep = sub.add_parser("replay", help="score every variant over stored snapshots")
+    rep.add_argument("--variant", default=None)
+    rep.add_argument("--show-holdout", action="store_true",
+                     help="reveal holdout results (prefer `promote`, which logs the look)")
+    rep.set_defaults(func=_cmd_replay)
+
+    rpt = sub.add_parser("report", help="write the end-of-day report")
+    rpt.add_argument("--day", default=None)
+    rpt.set_defaults(func=_cmd_report)
+
+    prop = sub.add_parser("propose", help="pre-register a hypothesis")
+    prop.add_argument("--variant", required=True)
+    prop.add_argument("--hypothesis", required=True)
+    prop.add_argument("--criterion", required=True)
+    prop.set_defaults(func=_cmd_propose)
+
+    prom = sub.add_parser("promote", help="open the holdout and decide on a challenger")
+    prom.add_argument("--variant", required=True)
+    prom.add_argument("--reason", default=None)
+    prom.add_argument("--apply", action="store_true")
+    prom.set_defaults(func=_cmd_promote)
+
+    sub.add_parser("variants").set_defaults(func=_cmd_variants)
 
     args = parser.parse_args(argv)
     config = load_config(args.config)

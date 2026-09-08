@@ -3,6 +3,10 @@
 **Status:** built, runs, paper only. The machinery is finished and tested; the edge is
 not proven. Section 6 of [PLAN.md](PLAN.md) is still the gate before any real money.
 
+The daily improvement loop that runs on top of this — stored chains, competing variants,
+a locked holdout, and the rules for when a parameter is allowed to change — is
+documented separately in **[RESEARCH.md](RESEARCH.md)**.
+
 This is the first working code in the repo. It is deliberately *not* the five-sleeve
 system that PLAN.md describes — it is one sleeve, wired end to end, so that the
 operational half of the project (scheduling, state, orders, reconciliation, journaling)
@@ -52,6 +56,7 @@ available argument says to hold on a little longer.
 | 10:00–15:45, every 5 min | `trading-agent manage` | profit target, stop, or hold |
 | 15:45 | `trading-agent manage` | **force flat**, paying up if it has to |
 | 15:50, 15:55 | `trading-agent manage` | retry if the flatten did not fill |
+| 16:05 | `trading-agent report` | score the day, replay every variant, write the report |
 | Sat 08:00 | `trading-agent review` | the weekly read |
 
 Separate processes rather than one long-lived loop: a loop that dies mid-session loses
@@ -127,32 +132,42 @@ floor stops the session before any of that arithmetic runs.
 Every one of these is a bug that produces plausible-looking behaviour rather than a
 crash, which is why they are handled structurally rather than left to be noticed.
 
-1. **The credit sign.** Alpaca expresses a multi-leg credit as a *negative* limit price.
+1. **A stop inside the bid/ask spread.** *Found by the research engine, after this
+   document first claimed the design was sound.* The exit rules compared a marketable
+   cost-to-close against a threshold set as a multiple of the credit received — both
+   spread-crossed, in opposite directions. On four legs the cost to close starts a full
+   round trip above the credit, so a "2× credit" stop sat *below where the position
+   opened* and fired on every trade seconds after entry. It surfaced as a 0% win rate,
+   not as an error. The fix is a distinction now enforced in `exits.py`: **decisions on
+   the mid mark, orders and P&L at marketable prices**, with the stop expressed as a
+   fraction of max loss — a fixed, known, spread-independent number. Win rate went
+   29% → 66%.
+2. **The credit sign.** Alpaca expresses a multi-leg credit as a *negative* limit price.
    Backwards, you pay to open a short condor, and a paper account fills it happily. It
    has [its own test](../agent/tests/test_broker.py).
-2. **Strike scaling in OCC symbols.** `604.0 → 00604000`. Get it wrong and you get a
+3. **Strike scaling in OCC symbols.** `604.0 → 00604000`. Get it wrong and you get a
    symbol that is valid and is the wrong contract. Parsed from the right so root length
    never shifts the field.
-3. **Server timezone.** All session times are exchange-local. A UTC box would otherwise
+4. **Server timezone.** All session times are exchange-local. A UTC box would otherwise
    shift the entry window by an hour twice a year.
-4. **Missing greeks.** The free indicative feed does not reliably publish delta. Falling
+5. **Missing greeks.** The free indicative feed does not reliably publish delta. Falling
    back to "whatever strike is a few points out" silently turns a 16-delta condor into a
    30-delta condor on a high-vol morning, so delta is recomputed from IV, and from the
    mid price if IV is missing too.
-5. **The worthless long wing.** Late in the day a far wing's bid decays to nothing.
+6. **The worthless long wing.** Late in the day a far wing's bid decays to nothing.
    Requiring a two-sided market on all four legs to compute an exit strands the *short*
    legs into settlement. Shorts need an offer; longs are valued at zero if bidless.
-6. **A ladder that concedes past its own gate.** Walking the limit below the gated credit
+7. **A ladder that concedes past its own gate.** Walking the limit below the gated credit
    is not patience, it is entering a different trade from the one that was approved. The
    ladder is floored at the gate price.
-7. **The journal overwriting itself.** Entry and exit are separate processes on the same
+8. **The journal overwriting itself.** Entry and exit are separate processes on the same
    date. The daily page is rebuilt from every row carrying that date, so the afternoon's
    exit cannot erase the morning's reasoning.
-8. **Kill switches that outlive their reason — or don't.** A daily-loss halt expires with
+9. **Kill switches that outlive their reason — or don't.** A daily-loss halt expires with
    its day. A halt a human set stays set until a human clears it.
-9. **Rolling the day more than once.** Every cron invocation rolls the state; only the
+10. **Rolling the day more than once.** Every cron invocation rolls the state; only the
    first of the day may count anything, or a losing streak inflates by one per cron slot.
-10. **A failed force-flat going quiet.** Past 15:45 with an open structure is the one
+11. **A failed force-flat going quiet.** Past 15:45 with an open structure is the one
     "hold" that writes an escalation into the journal and surfaces in the weekly review.
 
 ## 6. Running it
@@ -161,7 +176,7 @@ crash, which is why they are handled structurally rather than left to be noticed
 cd agent
 python -m venv .venv && .venv/bin/pip install -e '.[broker,dev]'
 
-.venv/bin/pytest                                   # 93 tests, no network, no keys
+.venv/bin/pytest                                   # 168 tests, no network, no keys
 .venv/bin/trading-agent --config config/agent.yaml demo
 ```
 

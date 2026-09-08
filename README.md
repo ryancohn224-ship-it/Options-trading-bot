@@ -14,6 +14,11 @@ today's chain, trades or stands down, and journals every session either way. Thi
 the operational half of the project working end to end while the research half is
 still being built.
 
+🔬 **[docs/RESEARCH.md](docs/RESEARCH.md)** — the daily improvement loop: stored chains,
+competing variants, a locked holdout, and the rules for when a parameter may change.
+Built to resist its own conclusions, because at one trade a day the default outcome of
+"keep tuning until it looks good" is a strategy fitted to noise.
+
 📄 **[docs/PLAN.md](docs/PLAN.md)** — the full development plan.
 
 Covers:
@@ -41,9 +46,12 @@ Three programs sharing one strategy library: a nightly **loader**, an on-demand
 
 ```bash
 cd agent && python -m venv .venv && .venv/bin/pip install -e '.[broker,dev]'
-.venv/bin/pytest                                          # 93 tests, no keys needed
+.venv/bin/pytest                                          # 168 tests, no keys needed
 .venv/bin/trading-agent --config config/agent.yaml demo   # a full synthetic session
 ```
+
+Run `simulate`, then `replay` and `report`, to watch the whole research loop operate on
+synthetic days without credentials.
 
 The agent is one sleeve, not the five in the plan, and its edge is **not proven** — a
 short condor is risk-neutral-fair by construction, so everything rests on the variance

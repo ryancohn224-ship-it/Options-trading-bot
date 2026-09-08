@@ -1,0 +1,74 @@
+variants:
+- name: champion
+  note: The live configuration. Whatever is trading today.
+  status: champion
+- name: wider-wings
+  overrides:
+    structure:
+      wing_width: 2.0
+  note: Wider wings collect more absolute credit and raise credit-to-width, at more risk per contract.
+    Tests whether the $1 wing is too tight to clear costs.
+  status: challenger
+- name: further-out
+  overrides:
+    structure:
+      short_delta: 0.1
+  note: 'Sell further from the money: fewer losses, thinner credit. The other end of the same trade-off
+    the 16-delta default picks a point on.'
+  status: challenger
+- name: closer-in
+  overrides:
+    structure:
+      short_delta: 0.22
+  note: Nearer strikes for materially more credit. Should lose more often; the question is whether the
+    extra premium more than pays for it.
+  status: challenger
+- name: no-vrp-gate
+  overrides:
+    gate:
+      min_vrp: 0.0
+  note: The control for the edge claim. If this matches the champion, the variance risk premium filter
+    is doing nothing and the champion's edge is elsewhere.
+  status: challenger
+- name: strict-vrp
+  overrides:
+    gate:
+      min_vrp: 0.3
+  note: Trade only when implied is far above realized. Fewer trades; the test is whether expectancy per
+    trade rises enough to justify the ones skipped.
+  status: challenger
+- name: take-quarter
+  overrides:
+    exits:
+      profit_target: 0.25
+  note: Take a quarter of the credit and leave. Cuts tail exposure and raises win rate; the risk is paying
+    two spreads for a quarter of a thin credit.
+  status: challenger
+- name: take-three-quarters
+  overrides:
+    exits:
+      profit_target: 0.75
+  note: Hold for most of the credit. Fewer round trips, more time exposed to a move.
+  status: challenger
+- name: tight-stop
+  overrides:
+    exits:
+      stop_loss_fraction: 0.35
+  note: "Cut at a third of max loss. On a defined-risk structure a stop swaps a capped loss for a smaller\
+    \ certain one \u2014 worth testing, not obvious."
+  status: challenger
+- name: no-stop
+  overrides:
+    exits:
+      stop_loss_fraction: 1.0
+  note: Never stop; let the defined risk do its job and flatten at 15:45. The control for whether stopping
+    helps at all on a structure that cannot lose more than its width.
+  status: challenger
+- name: late-entry
+  overrides:
+    schedule:
+      entry_start: '11:00'
+      entry_cutoff: '13:00'
+  note: 'Enter later: less time exposed, less premium. Tests whether the 10:00 start is buying decay or
+    buying risk.'
+  status: challenger

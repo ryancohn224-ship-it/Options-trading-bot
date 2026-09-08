@@ -1,4 +1,9 @@
-var/
+# The loop's memory lives in var/ and is COMMITTED on purpose: each session runs in a
+# fresh container, so anything not in git did not happen. Snapshots are gzipped and
+# run about 100 KB a day.
+var/log/
+var/reports/
+
 .venv/
 .env
 __pycache__/

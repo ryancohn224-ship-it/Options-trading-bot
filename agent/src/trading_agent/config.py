@@ -128,10 +128,14 @@ class RiskConfig(StrictModel):
 
 
 class ExitConfig(StrictModel):
-    #: Close when we can buy the structure back for (1 - target) x credit.
+    """Both thresholds are compared against the *mid* mark. See `exits.py` for why."""
+
+    #: Close when the structure's mid value falls to (1 - target) x credit.
     profit_target: float = Field(default=0.50, gt=0.0, lt=1.0)
-    #: Close when the debit to exit reaches this multiple of the credit received.
-    stop_multiple: float = Field(default=2.0, gt=1.0, le=10.0)
+    #: Close when unrealised loss reaches this fraction of the defined max loss.
+    #: Expressed against max loss rather than against the credit, because max loss is
+    #: a fixed known number and the credit is a spread-crossed one.
+    stop_loss_fraction: float = Field(default=0.60, gt=0.0, le=1.0)
 
 
 class ExecutionConfig(StrictModel):
@@ -150,6 +154,24 @@ class ExecutionConfig(StrictModel):
     ladder_max_concession: float = Field(default=1.0, ge=0.0, le=1.0)
     #: Exits are urgent; give up this fraction of the mid to get flat.
     exit_slippage_allowance: float = Field(default=0.10, ge=0.0, le=1.0)
+
+
+class CostConfig(StrictModel):
+    """Pass-through fees, which a naive backtest ignores and which decide marginal trades.
+
+    Alpaca charges no commission on options, but OCC clearing, the options regulatory
+    fee and exchange fees are passed through at roughly six cents per contract per
+    transaction. A condor is four legs in and four legs out: eight transactions, about
+    fifty cents per contract round trip. Against a thirteen-cent credit — thirteen
+    dollars per contract — that is four percent of the gross, and it is the difference
+    between a marginal strategy and a losing one.
+    """
+
+    per_contract_leg: float = Field(default=0.065, ge=0.0, le=2.0)
+    #: Legs charged when the structure is closed by order rather than left to expire.
+    legs_round_trip: int = Field(default=8, ge=1, le=8)
+    #: Legs charged when it is allowed to settle (entry only; worthless legs cost nothing).
+    legs_to_expiry: int = Field(default=4, ge=1, le=8)
 
 
 class LLMConfig(StrictModel):
@@ -172,6 +194,12 @@ class PathsConfig(StrictModel):
     state_dir: Path = Path("var/state")
     journal_dir: Path = Path("var/journal")
     kill_switch_file: Path = Path("var/state/KILL_SWITCH")
+    #: Stored chains. The research asset — see snapshot.py.
+    snapshot_dir: Path = Path("var/snapshots")
+    #: Proposals, promotions, holdout openings, retirements.
+    research_dir: Path = Path("var/research")
+    report_dir: Path = Path("var/reports")
+    variants_file: Path = Path("config/variants.yaml")
 
 
 class AgentConfig(StrictModel):
@@ -183,6 +211,7 @@ class AgentConfig(StrictModel):
     risk: RiskConfig = RiskConfig()
     exits: ExitConfig = ExitConfig()
     execution: ExecutionConfig = ExecutionConfig()
+    costs: CostConfig = CostConfig()
     llm: LLMConfig = LLMConfig()
     paths: PathsConfig = PathsConfig()
 

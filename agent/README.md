@@ -5,6 +5,8 @@ whether the market is offering a trade worth doing, and either takes it or write
 why it didn't.
 
 Full design notes and the honest caveats: **[../docs/AGENT.md](../docs/AGENT.md)**.
+The daily improvement loop, and why it is built to resist its own conclusions:
+**[../docs/RESEARCH.md](../docs/RESEARCH.md)**.
 
 ## Quick start
 
@@ -12,6 +14,11 @@ Full design notes and the honest caveats: **[../docs/AGENT.md](../docs/AGENT.md)
 python -m venv .venv && .venv/bin/pip install -e '.[broker,dev]'
 .venv/bin/pytest                                          # no network, no keys
 .venv/bin/trading-agent --config config/agent.yaml demo   # a whole synthetic session
+
+# Watch the research loop run, with no keys and no market:
+.venv/bin/trading-agent --config config/agent.yaml simulate --days 150
+.venv/bin/trading-agent --config config/agent.yaml replay
+.venv/bin/trading-agent --config config/agent.yaml report
 ```
 
 ## Commands
@@ -24,6 +31,12 @@ python -m venv .venv && .venv/bin/pip install -e '.[broker,dev]'
 | `demo` | A full session against a synthetic chain, no credentials |
 | `review` | What the journal says about the last N days |
 | `show` | Render the most recent session |
+| `report` | End-of-day report: today, leaderboard, statistical verdict |
+| `replay` | Score every variant over every stored chain |
+| `variants` | List the champion and its challengers |
+| `propose` | Pre-register a hypothesis before testing it |
+| `promote` | Open the holdout and decide on a challenger (logged) |
+| `simulate` | Generate synthetic sessions to exercise the loop |
 
 Global flags go before the subcommand: `--config`, `--broker sim|alpaca`,
 `--source synthetic|alpaca`, `--equity`, `--spot`, `--iv`.
@@ -42,10 +55,17 @@ src/trading_agent/
   guardrails.py          preflight: kill switch, streaks, windows, equity floor
   broker.py              Alpaca multi-leg adapter + a pessimistic simulator
   llm.py                 the model's veto-only seat
+  exits.py               when to get out - shared by live and replay
   session.py             the daily sequence
   journal.py             the output that actually matters
-tests/                   93 tests
-var/                     state and journal (gitignored; commit them if you want history)
+  snapshot.py            stored chains: the research asset
+  replay.py              re-run any variant over any stored day
+  variants.py            named parameter overlays that compete
+  research.py            statistics, the holdout, promotion rules
+  report.py              the end-of-day report
+  simulate.py            a synthetic market, to prove the loop
+tests/                   168 tests
+var/                     state, journal, snapshots, research - COMMITTED (the loop's memory)
 ```
 
 ## Safety

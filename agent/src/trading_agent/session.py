@@ -20,10 +20,12 @@ from . import llm as llm_mod
 from .broker import Broker
 from .clock import Clock
 from .config import AgentConfig
+from .exits import decide_exit, mark_to_market
 from .guardrails import check_daily_loss, preflight
 from .marketdata import ChainSource
 from .models import CondorQuote, OptionChain
 from .sizing import size_condor
+from .snapshot import SnapshotStore, snapshot_from_chain
 from .state import OpenPosition, Store
 
 
@@ -76,6 +78,8 @@ class Session:
         journal: journal_mod.Journal,
         env: dict[str, str],
         sleep=_time.sleep,
+        snapshots: SnapshotStore | None = None,
+        fidelity: str = "live",
     ) -> None:
         self.config = config
         self.clock = clock
@@ -85,6 +89,26 @@ class Session:
         self.journal = journal
         self.env = env
         self.sleep = sleep
+        self.snapshots = snapshots
+        self.fidelity = fidelity
+        self.journal_note: str | None = None
+
+    def _record(self, chain, prev_close=None, realized_vol=None) -> None:
+        """Store what the market looked like. Never allowed to break the session.
+
+        The research loop needs this to exist; the trading loop must not depend on it.
+        A disk error at 15:45 is not a reason to leave a 0DTE structure open.
+        """
+        if self.snapshots is None:
+            return
+        try:
+            self.snapshots.write(
+                snapshot_from_chain(
+                    chain, self.clock.today(), self.fidelity, prev_close, realized_vol
+                )
+            )
+        except OSError as exc:  # noqa: BLE001 - recording is best-effort by design
+            self.journal_note = f"snapshot write failed: {exc}"
 
     # -- entry -------------------------------------------------------------------
 
@@ -113,6 +137,9 @@ class Session:
         pre = preflight(
             cfg, self.clock, state, account, self.env, broker_open, holding_position=held is not None
         )
+        if self.journal_note:
+            entry.note(self.journal_note)
+            self.journal_note = None
         entry.preflight = journal_mod.gates_to_rows(pre.report)
         if not pre.ok:
             self.store.save_state(state)
@@ -130,6 +157,8 @@ class Session:
             self.store.save_state(state)
             entry.note(f"chain fetch failed: {exc}")
             return self._finish(entry, "error", f"chain fetch failed: {exc}")
+
+        self._record(chain, prev_close, realized)
 
         t = self.clock.year_fraction_to(expiry)
         entry.spot = chain.spot
@@ -265,30 +294,28 @@ class Session:
         from datetime import date as _date
 
         chain = self.source.get_chain(position.underlying, _date.fromisoformat(position.expiry))
+        self._record(chain)
         entry.spot = chain.spot
-        cost = close_cost(chain, position)
-        past_flat = self.clock.past_force_flat()
 
-        if cost is None:
-            if past_flat:
-                return self._exit(position, entry, None, "force_flat_unquoted")
-            entry.note("a leg is unquoted; holding and re-checking")
-            return SessionResult("hold", "unquoted leg", entry)
-
-        target = position.credit_per_contract * (1.0 - cfg.exits.profit_target)
-        stop = position.credit_per_contract * cfg.exits.stop_multiple
-
-        if past_flat:
-            return self._exit(position, entry, cost, "force_flat")
-        if cost <= target:
-            return self._exit(position, entry, cost, "profit_target")
-        if cost >= stop:
-            return self._exit(position, entry, cost, "stop")
-
-        entry.note(
-            f"holding: {cost:.2f} to close against a {target:.2f} target and a {stop:.2f} stop"
+        # Two prices, two jobs. The mid mark decides; the marketable cost is what we
+        # would actually pay to act on that decision. Conflating them puts the stop
+        # inside the bid/ask — see exits.py.
+        mark = mark_to_market(
+            chain, position.short_put, position.long_put,
+            position.short_call, position.long_call,
         )
-        return SessionResult("hold", f"cost to close {cost:.2f}", entry)
+        cost = close_cost(chain, position)
+        decision = decide_exit(
+            mark, position.credit_per_contract, position.max_loss_per_contract,
+            cfg, self.clock.past_force_flat(),
+        )
+
+        if decision.should_exit:
+            reason = decision.reason if cost is not None else f"{decision.reason}_unquoted"
+            return self._exit(position, entry, cost, reason)
+
+        entry.note(f"holding: {decision}")
+        return SessionResult("hold", str(decision), entry)
 
     def _exit(
         self,
@@ -304,7 +331,10 @@ class Session:
         """
         exe = self.config.execution
         urgent = reason.startswith("force_flat")
-        base = cost if cost is not None else position.credit_per_contract * self.config.exits.stop_multiple
+        # With no quote to work from, bid the full width: that is the most the structure
+        # can ever be worth, so the limit is guaranteed marketable and we get flat.
+        width = position.max_loss_per_contract / 100.0 + position.credit_per_contract
+        base = cost if cost is not None else width
         limit = round(base * (1.0 + (exe.exit_slippage_allowance if urgent else 0.0)), 2)
 
         order_id = self.broker.submit_close(position, limit, f"{entry.session_id}-close")

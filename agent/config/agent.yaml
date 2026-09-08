@@ -47,8 +47,9 @@ risk:
   buying_power_headroom: 0.5
 
 exits:
-  profit_target: 0.50            # close for half the credit received
-  stop_multiple: 2.0             # close if the exit debit reaches 2x the credit
+  # Both compared against the MID mark, never a spread-crossed price. See exits.py.
+  profit_target: 0.50            # close when the mid value falls to half the credit
+  stop_loss_fraction: 0.60       # close when unrealised loss hits 60% of max loss
 
 execution:
   ladder_steps: 4
@@ -66,3 +67,7 @@ paths:
   state_dir: var/state
   journal_dir: var/journal
   kill_switch_file: var/state/KILL_SWITCH
+  snapshot_dir: var/snapshots      # stored chains: the research asset
+  research_dir: var/research       # proposals, promotions, holdout openings
+  report_dir: var/reports
+  variants_file: config/variants.yaml
