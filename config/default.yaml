@@ -1,0 +1,49 @@
+mode: paper
+data:
+  warehouse_dir: warehouse
+  state_dir: state
+  feed: indicative        # switch to opra with Algo Trader Plus
+  stock_history_days: 800
+universe:
+  symbols: [SPY, QQQ, IWM, AAPL, MSFT, NVDA, AMZN, GOOGL, META, XLF, XLE, GLD, TLT]
+  beta: {SPY: 1.0, QQQ: 1.15, IWM: 1.1, AAPL: 1.2, MSFT: 1.1, NVDA: 1.8, AMZN: 1.3, GOOGL: 1.1, META: 1.3, XLF: 1.1, XLE: 0.9, GLD: 0.1, TLT: -0.2}
+  min_underlying_price: 20
+  min_open_interest: 500
+  max_spread_pct_of_mid: 0.08
+  max_spread_abs: 0.15
+structure:
+  short_delta: 0.16
+  width_pct: 0.01
+  min_dte: 35
+  max_dte: 55
+  profit_take: 0.5
+  loss_stop_mult: 2.0
+  exit_dte: 21
+  min_credit_to_width: 0.10
+voltarget:
+  enabled: true
+  reference_market_vol: 0.16
+  max_scalar: 1.5
+risk:
+  max_loss_per_trade_pct: 0.015
+  max_positions: 8
+  max_per_underlying: 2
+  max_bp_utilization: 0.40
+  delta_band_per_1k: 0.30
+  vega_cap_per_1k: 2.0
+  gamma_floor_per_1k: -0.05
+  daily_loss_halt_pct: 0.03
+  monthly_loss_halve_pct: 0.08
+  max_drawdown_kill_pct: 0.20
+  consecutive_loss_pause: 3
+  enforce_day_trade_guard: true
+execution:
+  sim_fill_frac_into_spread: 0.40
+  walker_steps: 5
+  walker_seconds_per_step: 120
+  walker_max_frac_into_spread: 0.60
+alpha:
+  min_expected_return: 0.02
+  vrp_min_edge_vol_pts: 0.02
+  skew_rich_percentile: 0.70
+  factor_weights: {vrp: 1.0, skew: 0.5, trend: 1.0}

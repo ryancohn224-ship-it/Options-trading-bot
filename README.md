@@ -1,46 +1,56 @@
-# options-trading-bot
+# options-trading-bot (otb)
 
-A systematic options trading system designed to be direction-agnostic — harvesting the
-variance risk premium in calm and rising markets, rotating short-delta in declines, and
-carrying a permanent income-financed tail hedge for crashes.
+A systematic, defined-risk options trading system. Direction-agnostic by construction: it harvests the
+variance risk premium where implied vol exceeds a HAR-IV forecast of realized vol, tilts by skew and trend,
+sizes the *aggregate* risk budget by Moreira–Muir volatility targeting, and runs every candidate through a
+greek-constrained portfolio selector and a pessimistic cost model before anything is sent to the broker.
 
-**Status: planning. No code yet.**
+Backtest and live trading share one code path (`otb.engine.strategy.decide`). Alpaca is the broker.
 
-## Start here
+- 📄 [docs/PLAN.md](docs/PLAN.md) — the original plan (data, account constraints, risk framework)
+- 🔬 [docs/REDESIGN.md](docs/REDESIGN.md) — the research behind this design, with sources
+- 🏃 [docs/RUNBOOK.md](docs/RUNBOOK.md) — **how to run it against your Alpaca paper account**
 
-📄 **[docs/PLAN.md](docs/PLAN.md)** — the full development plan.
+## Status
 
-🔬 **[docs/REDESIGN.md](docs/REDESIGN.md)** — research report: how the system would be
-redesigned from the ground up for consistency, with the academic and practitioner evidence
-for each change. Research only; not yet adopted into the plan.
+| Piece | State |
+|---|---|
+| Pricing (BS, greeks, IV), OCC symbols | ✅ tested |
+| Warehouse (Parquet + DuckDB), point-in-time filtering | ✅ tested |
+| Synthetic stochastic-vol market with skewed surface and true VRP | ✅ |
+| Features: Yang-Zhang RV, HAR-IV forecaster, surface summary, HMM regime | ✅ tested |
+| Factors: VRP (F1), skew (F2), trend overlay (F7), execution cost | ✅ |
+| Structures: put/call credit spreads, iron condors, width ladder; screener | ✅ tested |
+| Portfolio: vol-target scalar, greek/BP/concentration-constrained selector | ✅ tested |
+| Risk: drawdown ladder, kill switch, consecutive-loss pause, day-trade guard | ✅ tested |
+| Sim broker with 40%-into-spread fill model and expiry settlement | ✅ tested |
+| Alpaca broker: multi-leg limit orders with limit walker, ledger, reconciliation | ✅ validated against alpaca-py request models with a fake client; **not yet run against the live API** (sandbox cannot reach Alpaca) |
+| Live runner, loader, CLI (`synth/backtest/load/trade/status/doctor`) | ✅ |
+| Streamlit dashboard, Dockerfile + cron, CI | ✅ |
+| Meta-labeling (F-ML), F3 term structure, F4 dispersion, F5 earnings | ⏳ per REDESIGN §6: after a trade log exists |
 
-Covers:
-- Whether Alpaca alone is sufficient (short answer: fine for execution, not for research)
-- Data vendors and a phased spend, sized for a small account (~$700–1,000 to go live)
-- Strategy design across five sleeves, and the regime engine that switches between them
-- Specific indicators, support/resistance methods, screening criteria
-- Risk management and circuit breakers
-- Backtesting validation protocol
-- Phased build plan (~6–8 months to first live capital)
+## Synthetic-world result (pipeline validation, not a performance claim)
 
-## Target profile
+760-day synthetic market with a 3-vol-point VRP, $25k, pessimistic fills:
 
-Taxable margin account, under $25k, paper trading until an edge is demonstrated.
-See [§2](docs/PLAN.md#2-your-account-profile-and-what-it-constrains) for what that
-constrains.
+| | Profit factor | Win rate | Trades |
+|---|---|---|---|
+| Vol-targeting **on** | **1.58** | 76% | 41 |
+| Vol-targeting **off** | 0.81 | 65% | 31 |
 
-## Stack
+Same data, same everything else. That is the direction the literature predicts; the magnitude on real data is
+what paper trading is for.
 
-Python 3.12 · Polars · DuckDB + Parquet · `alpaca-py` · `py_vollib` · Streamlit · Docker.
-Three programs sharing one strategy library: a nightly **loader**, an on-demand
-**backtester**, and a daily **trader**. See [§4](docs/PLAN.md#4-what-were-actually-building).
+## Quick start
 
-## Open questions
-
-Capital amount, margin vs cash account, and max acceptable drawdown — see
-[§2](docs/PLAN.md#still-open--i-need-these-to-proceed).
+```bash
+pip install -e ".[dashboard,dev]" && pytest -q
+otb synth --days 760 && otb backtest --warmup 120      # offline, no keys
+export APCA_API_KEY_ID=... APCA_API_SECRET_KEY=...
+otb doctor && otb load && otb trade --dry-run           # then: otb trade
+```
 
 ## Disclaimer
 
-Not investment advice. Systematic options trading carries substantial risk of loss.
-Nothing in this repository is a projection or guarantee of returns.
+Not investment advice. Systematic options trading carries substantial risk of loss. Nothing here is a
+projection or guarantee of returns.

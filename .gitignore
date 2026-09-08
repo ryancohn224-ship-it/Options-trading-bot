@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+warehouse/**/*.parquet
+warehouse/*.duckdb
+state/
+.env
+*.egg-info/
+dist/
