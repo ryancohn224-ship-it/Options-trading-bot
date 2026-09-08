@@ -10,6 +10,10 @@ carrying a permanent income-financed tail hedge for crashes.
 
 📄 **[docs/PLAN.md](docs/PLAN.md)** — the full development plan.
 
+🔬 **[docs/REDESIGN.md](docs/REDESIGN.md)** — research report: how the system would be
+redesigned from the ground up for consistency, with the academic and practitioner evidence
+for each change. Research only; not yet adopted into the plan.
+
 Covers:
 - Whether Alpaca alone is sufficient (short answer: fine for execution, not for research)
 - Data vendors and a phased spend, sized for a small account (~$700–1,000 to go live)
